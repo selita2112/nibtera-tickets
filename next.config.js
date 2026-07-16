@@ -12,7 +12,7 @@ const csp = [
   "media-src 'self' blob: data:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  "form-action 'self'","form-action 'self' https://checkout.yagoutpay.com",
 ].join('; ');
 
 const securityHeaders = [
