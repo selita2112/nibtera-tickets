@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import prisma from '@/lib/prisma';
-import { verifyAuth } from '@/lib/auth-middleware';
+
 import {
   yagoutEncrypt,
   yagoutHash,
@@ -13,10 +13,7 @@ import {
 export async function POST(req: NextRequest) {
   try {
     // --- 1. Auth (mirrors the existing NIB Mini-App initiate route) ---
-    const user = await verifyAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-    }
+    
 
     // --- 2. Parse request body ---
     const body = await req.json();
