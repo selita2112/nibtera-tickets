@@ -132,17 +132,21 @@ export async function POST(request: NextRequest) {
           throw new Error(`Not enough tickets available for "${ticketType.name}".`);
         }
 
-        const attendeesToCreate = Array.from({ length: quantity }).map(() => ({
-          name,
-          phoneNumber: normalizedPhone || undefined,
-          userId: validUserId,
-          eventId: eventPayment.eventId,
-          ticketTypeId,
-          checkedIn: false,
-          qrCode: randomUUID(),
-        }));
+        for (let i = 0; i < quantity; i++) {
+          lastAttendee = await tx.attendee.create({
+            data: {
+              name,
+              phoneNumber: normalizedPhone || undefined,
+              userId: validUserId,
+              eventId: eventPayment.eventId,
+              ticketTypeId,
+              checkedIn: false,
+              qrCode: randomUUID(),
+            },
+          });
+        }
 
-        await tx.attendee.createMany({ data: attendeesToCreate });
+        await tx.ticketType.update({ where: { id: ticketTypeId }, data: { sold: { increment: quantity } } });
 
         lastAttendee = await tx.attendee.findFirst({
           where: {
