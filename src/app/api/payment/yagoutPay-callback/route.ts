@@ -23,7 +23,25 @@ export async function POST(request: NextRequest) {
   const txnResponseEnc = formData.get('txn_response')?.toString();
   const otherDetailsEnc = formData.get('other_details')?.toString();
   const hashEnc = formData.get('hash')?.toString();
+// --- Log every callback field Yagout actually posted, raw + decrypted ---
+  const meIdField = formData.get('me_id')?.toString();
+  const pgDetailsEnc = formData.get('pg_details')?.toString();
+  const txnDetailsEnc = formData.get('txn_details')?.toString();
+  const fraudDetailsEnc = formData.get('fraud_details')?.toString();
 
+  console.log('================ [YAGOUT CALLBACK] Raw fields received ================');
+  console.log('[YAGOUT CALLBACK] me_id (plain):', meIdField);
+  console.log('[YAGOUT CALLBACK] txn_response (encrypted):', txnResponseEnc);
+  console.log('[YAGOUT CALLBACK] pg_details (encrypted):', pgDetailsEnc);
+  console.log('[YAGOUT CALLBACK] txn_details (encrypted):', txnDetailsEnc);
+  console.log('[YAGOUT CALLBACK] other_details (encrypted):', otherDetailsEnc);
+  console.log('[YAGOUT CALLBACK] fraud_details (encrypted):', fraudDetailsEnc);
+  console.log('[YAGOUT CALLBACK] hash (encrypted):', hashEnc);
+
+  console.log('[YAGOUT CALLBACK] pg_details (decrypted):', pgDetailsEnc ? safeDecrypt(pgDetailsEnc) : null);
+  console.log('[YAGOUT CALLBACK] txn_details (decrypted):', txnDetailsEnc ? safeDecrypt(txnDetailsEnc) : null);
+  console.log('[YAGOUT CALLBACK] fraud_details (decrypted):', fraudDetailsEnc ? safeDecrypt(fraudDetailsEnc) : null);
+  console.log('==========================================================================');
   if (!txnResponseEnc) {
     console.error('YagoutPay callback: missing txn_response.');
     return redirectTo(request, 'failure', null, 'missing_fields');
