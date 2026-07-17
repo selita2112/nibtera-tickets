@@ -104,8 +104,18 @@ export async function POST(req: NextRequest) {
     });
 
     const merchantRequest = yagoutEncrypt(plaintext);
+      const hashInputRaw = `${meId}~${orderNo}~${amount}~ETH~ETB`;
     const hash = yagoutHash({ merchantId: meId, orderNo, amount, country: 'ETH', currency: 'ETB' });
-
+ console.log('================ [YAGOUT INITIATE] Outgoing request ================');
+    console.log('[YAGOUT INITIATE] postUrl:', postUrl);
+    console.log('[YAGOUT INITIATE] me_id:', meId);
+    console.log('[YAGOUT INITIATE] orderNo:', orderNo);
+    console.log('[YAGOUT INITIATE] amount:', amount);
+    console.log('[YAGOUT INITIATE] plaintext merchant_request (pre-encryption):', plaintext);
+    console.log('[YAGOUT INITIATE] encrypted merchant_request:', merchantRequest);
+    console.log('[YAGOUT INITIATE] hash input string (before sha256+encrypt):', hashInputRaw);
+    console.log('[YAGOUT INITIATE] final hash sent:', hash);
+    console.log('======================================================================');
     return NextResponse.json({
       success: true,
       postUrl,
