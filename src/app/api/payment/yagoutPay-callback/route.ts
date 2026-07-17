@@ -30,12 +30,16 @@ export async function POST(request: NextRequest) {
   }
 
   // 1. Decrypt the transaction response
-  const decryptedTxn = safeDecrypt(txnResponseEnc);
+const decryptedTxn = safeDecrypt(txnResponseEnc);
   if (!decryptedTxn) {
     console.error('YagoutPay callback: failed to decrypt txn_response.');
     return redirectTo(request, 'failure', null, 'decrypt_failed');
   }
   const txn = parseTxnResponse(decryptedTxn);
+
+  console.log('[YAGOUT CALLBACK] raw hash field:', hashEnc);
+  console.log('[YAGOUT CALLBACK] decrypted txn_response:', decryptedTxn);
+  console.log('[YAGOUT CALLBACK] parsed txn:', JSON.stringify(txn));
 
   // 2. Recover our PendingOrder's transactionId from udf_1 (other_details)
   let pendingOrderTxnId: string | null = null;
@@ -55,6 +59,7 @@ export async function POST(request: NextRequest) {
       country: txn.country,
       currency: txn.currency,
     });
+    console.log('[YAGOUT CALLBACK] hash valid?', hashValid);
     if (!hashValid) {
       console.error('YagoutPay callback: hash verification failed.', { orderNo: txn.orderNo });
       return redirectTo(request, 'failure', pendingOrderTxnId, 'signature_invalid');
@@ -132,21 +137,17 @@ export async function POST(request: NextRequest) {
           throw new Error(`Not enough tickets available for "${ticketType.name}".`);
         }
 
-        for (let i = 0; i < quantity; i++) {
-          lastAttendee = await tx.attendee.create({
-            data: {
-              name,
-              phoneNumber: normalizedPhone || undefined,
-              userId: validUserId,
-              eventId: eventPayment.eventId,
-              ticketTypeId,
-              checkedIn: false,
-              qrCode: randomUUID(),
-            },
-          });
-        }
+        const attendeesToCreate = Array.from({ length: quantity }).map(() => ({
+          name,
+          phoneNumber: normalizedPhone || undefined,
+          userId: validUserId,
+          eventId: eventPayment.eventId,
+          ticketTypeId,
+          checkedIn: false,
+          qrCode: randomUUID(),
+        }));
 
-        await tx.ticketType.update({ where: { id: ticketTypeId }, data: { sold: { increment: quantity } } });
+        await tx.attendee.createMany({ data: attendeesToCreate });
 
         lastAttendee = await tx.attendee.findFirst({
           where: {
