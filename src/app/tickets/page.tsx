@@ -101,53 +101,51 @@ export default function MyTicketsPage() {
   };
 
   useEffect(() => {
-    async function fetchTickets() {
-      setLoading(true);
-      try {
-        const response = await api.get('/api/auth/cookie-data');
-let phoneNumber = response.data?.data?.phoneNumber;
-const userId = response.data?.data?.userId;
+  async function fetchTickets() {
+  setLoading(true);
+  let phoneNumber: string | undefined;
+  let userId: string | undefined;
 
-// Fallback for guests who checked out on the public web (no SuperApp
-// bridge cookie was ever set for them) — use the phone number saved
-// locally at checkout time instead.
-if (!phoneNumber && !userId && typeof window !== 'undefined') {
-  phoneNumber = localStorage.getItem('nibtera_guest_phone') || undefined;
+  try {
+    const response = await api.get('/api/auth/cookie-data');
+    phoneNumber = response.data?.data?.phoneNumber;
+    userId = response.data?.data?.userId;
+  } catch (e) {
+    // cookie-data failing (404/401/etc.) just means no session cookie —
+    // fall through to the localStorage guest fallback below instead of bailing out.
+  }
+
+  if (!phoneNumber && !userId && typeof window !== 'undefined') {
+    phoneNumber = localStorage.getItem('nibtera_guest_phone') || undefined;
+  }
+
+  if (!phoneNumber && !userId) {
+    console.log("No user session found.");
+    setTickets([]);
+    setLoading(false);
+    return;
+  }
+
+  try {
+    const ticketResponse = await api.get('/api/tickets', {
+      params: {
+        ...(userId ? { userId } : {}),
+        ...(phoneNumber ? { phoneNumber } : {}),
+      },
+    });
+    setTickets(ticketResponse.data?.data ?? []);
+  } catch (error) {
+    console.error('❌ Failed to fetch tickets:', error);
+    toast({
+      variant: "destructive",
+      title: "Could not load tickets",
+      description: "There was a problem retrieving your tickets. Please try again later.",
+    });
+    setTickets([]);
+  } finally {
+    setLoading(false);
+  }
 }
-
-if (!phoneNumber && !userId) {
-  console.log("No user session found.");
-  setTickets([]);
-  return;
-}
-
-        const ticketResponse = await api.get('/api/tickets', {
-          params: {
-            ...(userId ? { userId } : {}),
-            ...(phoneNumber ? { phoneNumber } : {}),
-          },
-        });
-
-        setTickets(ticketResponse.data?.data ?? []);
-      } catch (error) {
-        const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-
-        if (status === 404) {
-          // User has no session data yet—show empty state without surfacing an error toast.
-          setTickets([]);
-        } else {
-          console.error('❌ Failed to fetch tickets:', error);
-          toast({
-            variant: "destructive",
-            title: "Could not load tickets",
-            description: "There was a problem retrieving your tickets. Please try again later.",
-          });
-          setTickets([]);
-        }
-      } finally {
-        setLoading(false);
-      }
-    }
 
     fetchTickets();
   }, [toast]);
