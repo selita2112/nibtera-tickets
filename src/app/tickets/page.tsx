@@ -105,14 +105,21 @@ export default function MyTicketsPage() {
       setLoading(true);
       try {
         const response = await api.get('/api/auth/cookie-data');
-        const phoneNumber = response.data?.data?.phoneNumber;
-        const userId = response.data?.data?.userId;
+let phoneNumber = response.data?.data?.phoneNumber;
+const userId = response.data?.data?.userId;
 
-        if (!phoneNumber && !userId) {
-          console.log("No user session found.");
-          setTickets([]);
-          return;
-        }
+// Fallback for guests who checked out on the public web (no SuperApp
+// bridge cookie was ever set for them) — use the phone number saved
+// locally at checkout time instead.
+if (!phoneNumber && !userId && typeof window !== 'undefined') {
+  phoneNumber = localStorage.getItem('nibtera_guest_phone') || undefined;
+}
+
+if (!phoneNumber && !userId) {
+  console.log("No user session found.");
+  setTickets([]);
+  return;
+}
 
         const ticketResponse = await api.get('/api/tickets', {
           params: {

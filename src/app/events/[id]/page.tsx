@@ -873,7 +873,9 @@ export default function PublicEventDetailPage() {
       }
 
       setIsPurchaseModalOpen(false);
-
+ if (typeof window !== 'undefined') {
+        localStorage.setItem('nibtera_guest_phone', attendeePhone);
+      }
       try {
         // Step 1: Create pending order
         const pendingOrderRes = await api.post('/api/payment/pending-order', {
