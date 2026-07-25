@@ -45,7 +45,13 @@ export async function POST(req: NextRequest) {
     if (pendingOrder.status === 'COMPLETED') {
       return NextResponse.json({ error: 'This order has already been paid.' }, { status: 400 });
     }
-
+const existingAttempts = await prisma.eventPayment.count({
+      where: { pendingOrderId: pendingOrder.id, method: 'YAGOUTPAY' },
+    });
+    if (existingAttempts >= 5) {
+      console.warn('[YAGOUT INITIATE] Too many payment attempts for order.', { transactionId: pendingOrder.transactionId, existingAttempts });
+      return NextResponse.json({ error: 'Too many payment attempts for this order. Please contact support.' }, { status: 429 });
+    }
     const attendeeData = pendingOrder.attendeeData as {
       name: string;
       phoneNumber?: string;

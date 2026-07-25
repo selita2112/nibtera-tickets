@@ -83,7 +83,16 @@ const decryptedTxn = safeDecrypt(txnResponseEnc);
       return redirectTo(request, 'failure', pendingOrderTxnId, 'signature_invalid');
     }
   }
+else {
+    console.warn('YagoutPay callback: no hash field present — signature verification skipped.', { orderNo: txn.orderNo });
+  }
 
+  // 3b. Compensating control while hash verification is unreliable: confirm
+  // the callback actually claims to be for OUR merchant account.
+  if (txn.meId !== process.env.YAGOUTPAY_MERCHANT_ID) {
+    console.error('YagoutPay callback: merchant ID mismatch.', { received: txn.meId, expected: process.env.YAGOUTPAY_MERCHANT_ID, orderNo: txn.orderNo });
+    return redirectTo(request, 'failure', pendingOrderTxnId, 'merchant_mismatch');
+  }
   // 4. Look up our EventPayment (by Yagout order_no) and the PendingOrder it belongs to
   const eventPayment = await prisma.eventPayment.findUnique({
     where: { transactionId: txn.orderNo },
@@ -97,6 +106,16 @@ const decryptedTxn = safeDecrypt(txnResponseEnc);
 
   const pendingOrder = eventPayment.pendingOrder;
   const isSuccess = txn.status?.toLowerCase() === 'successful';
+  const expectedAmount = Number(eventPayment.amount).toFixed(2);
+const receivedAmount = Number(txn.amount).toFixed(2);
+if (expectedAmount !== receivedAmount) {
+  console.error('YagoutPay callback: amount mismatch.', { expected: expectedAmount, received: receivedAmount, orderNo: txn.orderNo });
+  await prisma.eventPayment.update({
+    where: { id: eventPayment.id },
+    data: { status: 'FAILED', reference: txn.pgRef || txn.agRef || null },
+  });
+  return redirectTo(request, 'failure', pendingOrder.transactionId, 'amount_mismatch');
+}
 
   // 5. Idempotency guard — Yagout may redeliver the callback
   if (eventPayment.status === 'COMPLETED' || pendingOrder.status === 'COMPLETED') {
