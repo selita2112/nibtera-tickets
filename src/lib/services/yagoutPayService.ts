@@ -178,3 +178,103 @@ export function parseTxnResponse(decrypted: string): YagoutTxnResponse {
   ] = decrypted.split("|");
   return { agId, meId, orderNo, amount, country, currency, txnDate, txnTime, agRef, pgRef, status, resCode, resMessage };
 }
+
+/* --------------------------------------------------------------------- *
+ *  API Integration (Section B) — synchronous JSON call, no redirect,
+ *  no callback URL. Used for the in-app "our own pay page" checkout.
+ * --------------------------------------------------------------------- */
+
+export interface YagoutApiChargeInput {
+  agId: string;
+  meId: string;
+  orderNo: string;
+  amount: string; // "150.00"
+  country: string; // "ETH"
+  currency: string; // "ETB"
+  walletType: string; // "telebirr" | "cbebirr" | "mpesa" | ...
+  mobileNumber: string;
+  customerName?: string;
+  emailId?: string;
+  isLoggedIn: "Y" | "N";
+  /** Yagout-assigned Bank Identification code for the wallet PG (env: YAGOUTPAY_PG_ID) */
+  pgId: string;
+  /** Yagout-assigned Scheme Identification code for the wallet PG (env: YAGOUTPAY_SCHEME_ID) */
+  schemeId: string;
+}
+
+/** Builds the plain (pre-encryption) JSON payload for the API Integration endpoint. */
+export function buildApiIntegrationPayload(input: YagoutApiChargeInput) {
+  return {
+    card_details: { cardNumber: "", expiryMonth: "", expiryYear: "", cvv: "", cardName: "" },
+    other_details: { udf_1: "", udf_2: "", udf_3: "", udf_4: "", udf_5: "" },
+    ship_details: {
+      shipAddress: "", shipCity: "", shipState: "", shipCountry: "", shipZip: "", shipDays: "", addressCount: "",
+    },
+    txn_details: {
+      agId: input.agId,
+      meId: input.meId,
+      orderNo: input.orderNo,
+      amount: input.amount,
+      country: input.country,
+      currency: input.currency,
+      transactionType: "SALE",
+      // API mode is synchronous — Yagout returns the result inline, so no
+      // redirect URLs are needed (per the integration doc's sample payload).
+      sucessUrl: "",
+      failureUrl: "",
+      channel: "API",
+    },
+    item_details: { itemCount: "", itemValue: "", itemCategory: "" },
+    cust_details: {
+      customerName: input.customerName ?? "",
+      emailId: input.emailId ?? "",
+      mobileNumber: input.mobileNumber,
+      uniqueId: "",
+      isLoggedIn: input.isLoggedIn,
+    },
+    pg_details: {
+      pg_id: input.pgId,
+      paymode: "WA",
+      scheme_Id: input.schemeId,
+      wallet_type: input.walletType,
+    },
+    bill_details: { billAddress: "", billCity: "", billState: "", billCountry: "", billZip: "" },
+  };
+}
+
+/** Encrypts the plain JSON payload -> base64 `merchantRequest` string for the API Integration call. */
+export function encryptApiIntegrationPayload(payload: unknown, key: string = getKey()): string {
+  return yagoutEncrypt(JSON.stringify(payload), key);
+}
+
+export interface YagoutApiTxnResponse {
+  ag_id: string;
+  me_id: string;
+  order_no: string;
+  amount: string;
+  country: string;
+  currency: string;
+  txn_date: string;
+  txn_time: string;
+  ag_ref: string;
+  pg_ref: string;
+  status: string; // "Successful" | "Failed" | ...
+  res_code: string;
+  res_message: string;
+}
+
+export interface YagoutApiDecryptedResponse {
+  txn_response?: YagoutApiTxnResponse;
+  pg_details?: Record<string, unknown>;
+  fraud_details?: Record<string, unknown>;
+  other_details?: Record<string, unknown>;
+}
+
+/** Decrypts and JSON-parses the `response` field returned by the API Integration endpoint. */
+export function decryptApiIntegrationResponse(
+  encB64: string,
+  key: string = getKey(),
+): YagoutApiDecryptedResponse {
+  const plaintext = yagoutDecrypt(encB64, key);
+  return JSON.parse(plaintext);
+}

@@ -78,7 +78,45 @@ function formatEventDate(startDate: Date, endDate: Date | null | undefined): str
 
 const DEFAULT_IMAGE_PLACEHOLDER = '/images/nibtickets.jpg';
 
-async function payWithYagout(transactionId: string, total: number) {
+// Wallet options for YagoutPay's API Integration mode (doc section B, pg_details.wallet_type).
+// The customer picks one here instead of on Yagout's hosted page, since API mode never
+// leaves our site — Yagout pushes the authorization prompt straight to the chosen wallet.
+export const YAGOUT_WALLET_OPTIONS: { value: string; label: string }[] = [
+  { value: 'telebirr', label: 'Telebirr' },
+  { value: 'cbebirr', label: 'CBE Birr' },
+  { value: 'mpesa', label: 'M-Pesa' },
+  { value: 'kacha', label: 'Kacha' },
+  { value: 'cbemobile', label: 'CBE Mobile' },
+  { value: 'awashbirr', label: 'Awash Birr' },
+  { value: 'hijirabank', label: 'Hijira Bank' },
+  { value: 'ahadu', label: 'Ahadu' },
+  { value: 'NIB', label: 'NIB Bank' },
+  { value: 'yaya', label: 'YaYa Wallet' },
+];
+
+/**
+ * Charges the order via YagoutPay's "API Integration" flow: a single server-to-server
+ * JSON call that resolves synchronously (Successful/Failed) — no redirect, no
+ * success_url/failure_url, and no separate callback route. The ticket is issued
+ * server-side before this call returns.
+ */
+async function payWithYagoutApi(transactionId: string, total: number, walletType: string, mobileNumber: string) {
+  const res = await api.post('/api/payment/yagout/charge', {
+    total,
+    transactionId,
+    walletType,
+    mobileNumber,
+  });
+  return res.data as { success: boolean; attendeeId?: number; error?: string };
+}
+
+/**
+ * Charges the order via YagoutPay's "Aggregator Hosted (Non-Seamless)" flow: builds
+ * the signed form fields and does a full-page navigation to Yagout's hosted checkout.
+ * The customer picks their payment method there, and Yagout posts the result back
+ * to /api/payment/yagoutPay-callback.
+ */
+async function payWithYagoutHosted(transactionId: string, total: number) {
   const res = await api.post('/api/payment/yagout/initiate', {
     total,
     transactionId,
@@ -131,6 +169,8 @@ export default function PublicEventDetailPage() {
   const [attendeeName, setAttendeeName] = useState('');
   const [attendeePhone, setAttendeePhone] = useState('');
   const [isPhoneFromSession, setIsPhoneFromSession] = useState(false);
+  const [walletType, setWalletType] = useState<string>(YAGOUT_WALLET_OPTIONS[0].value);
+  const [paymentMethod, setPaymentMethod] = useState<'direct' | 'hosted'>('direct');
   const [existingClaimsCount, setExistingClaimsCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -351,7 +391,15 @@ export default function PublicEventDetailPage() {
 
         let isCancelled = false;
         let pollCount = 0;
-        const maxPolls = 20; // Poll for 40 seconds
+        // The YagoutPay API-Integration charge call can legitimately take up to
+        // ~110s (it blocks while the customer approves the wallet prompt on their
+        // phone) and resolves the request directly rather than relying on this
+        // poll. Keep the poll window comfortably longer than that so it doesn't
+        // report a false timeout while that request is still in flight — it's
+        // just a safety net (and still the primary mechanism for the NIB
+        // SuperApp webview flow).
+        const maxPolls = 65; // Poll for ~130 seconds
+
 
         const poll = async () => {
             if (isCancelled || pollCount >= maxPolls) {
@@ -857,6 +905,38 @@ export default function PublicEventDetailPage() {
                 />
               </div>
             </div>
+            {!isFreeTicketPurchase && (
+              <div className="grid gap-2">
+                <Label htmlFor="payment-method">Payment Method</Label>
+                <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as 'direct' | 'hosted')}>
+                  <SelectTrigger id="payment-method">
+                    <SelectValue placeholder="Select a payment method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="direct">Pay here (wallet approval prompt)</SelectItem>
+                    <SelectItem value="hosted">Pay on YagoutPay's checkout page</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {!isFreeTicketPurchase && paymentMethod === 'direct' && (
+              <div className="grid gap-2">
+                <Label htmlFor="wallet">Pay With</Label>
+                <Select value={walletType} onValueChange={setWalletType}>
+                  <SelectTrigger id="wallet">
+                    <SelectValue placeholder="Select a wallet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {YAGOUT_WALLET_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  You'll get a payment approval prompt on this wallet using the phone number above.
+                </p>
+              </div>
+            )}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -919,10 +999,28 @@ export default function PublicEventDetailPage() {
 
           window.myJsChannel.postMessage({ type: 'PAYMENT', token: paymentRes.data.paymentToken });
           toast({ title: "Processing Payment", description: "Handing off to NIBtera Super App..." });
-        } else {
-          // Ordinary browser — send the user to YagoutPay's hosted checkout.
-          await payWithYagout(transactionId, total);
+        } else if (paymentMethod === 'hosted') {
+          // Customer chose to pay on YagoutPay's hosted checkout page —
+          // full-page redirect; result arrives later via /yagoutPay-callback.
+          await payWithYagoutHosted(transactionId, total);
           // form.submit() above navigates the page away; nothing else to do here.
+        } else {
+          // Customer chose to pay directly, via YagoutPay's API Integration flow.
+          // This is a single synchronous call: the user stays on our page the
+          // whole time, and the result (success/failure) comes back directly —
+          // no redirect to Yagout's hosted checkout, no callback URL.
+          const chargeResult = await payWithYagoutApi(transactionId, total, walletType, attendeePhone);
+
+          if (chargeResult.success && chargeResult.attendeeId) {
+            try {
+              sessionStorage.setItem('showSuccessToast', 'true');
+            } catch (e) {
+              console.warn('Could not set sessionStorage flag');
+            }
+            router.push(`/ticket/${chargeResult.attendeeId}/confirmation`);
+          } else {
+            throw new Error(chargeResult.error || 'Payment was not approved. Please try again.');
+          }
         }
 
       } catch (err: any) {
