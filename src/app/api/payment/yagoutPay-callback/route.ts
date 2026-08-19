@@ -10,7 +10,7 @@ import {
   verifyYagoutHash,
   parseTxnResponse,
 } from '@/lib/services/yagoutPayService';
-
+import { logAudit } from '@/lib/audit';
 export async function POST(request: NextRequest) {
   let formData: FormData;
   try {
@@ -114,6 +114,13 @@ if (expectedAmount !== receivedAmount) {
     where: { id: eventPayment.id },
     data: { status: 'FAILED', reference: txn.pgRef || txn.agRef || null },
   });
+   await logAudit({
+    action: 'PAYMENT_FAILED',
+    entityType: 'EventPayment',
+    entityId: eventPayment.id,
+    details: { orderNo: txn.orderNo, reason: 'amount_mismatch', expectedAmount, receivedAmount },
+    status: 'FAILURE',
+  });
   return redirectTo(request, 'failure', pendingOrder.transactionId, 'amount_mismatch');
 }
 
@@ -126,6 +133,13 @@ if (expectedAmount !== receivedAmount) {
     await prisma.eventPayment.update({
       where: { id: eventPayment.id },
       data: { status: 'FAILED', reference: txn.pgRef || txn.agRef || null },
+    });
+     await logAudit({
+      action: 'PAYMENT_FAILED',
+      entityType: 'EventPayment',
+      entityId: eventPayment.id,
+      details: { orderNo: txn.orderNo, reason: txn.resMessage || 'payment_failed' },
+      status: 'FAILURE',
     });
     return redirectTo(request, 'failure', pendingOrder.transactionId, txn.resMessage || 'payment_failed');
   }
@@ -232,6 +246,18 @@ if (expectedAmount !== receivedAmount) {
     revalidatePath(`/payment/success?transaction_id=${pendingOrder.transactionId}`);
 
     console.log(`YagoutPay: payment confirmed for order ${pendingOrder.transactionId}, attendee ${createdAttendee?.id}.`);
+    await logAudit({
+      action: 'PAYMENT_COMPLETE',
+      entityType: 'EventPayment',
+      entityId: eventPayment.id,
+      details: {
+        orderNo: txn.orderNo,
+        eventId: eventPayment.eventId,
+        amount: txn.amount,
+        attendeeId: createdAttendee?.id,
+      },
+      status: 'SUCCESS',
+    });
     return redirectTo(request, 'success', pendingOrder.transactionId, null);
   } catch (error: any) {
     console.error('YagoutPay callback: failed to finalize order.', error);

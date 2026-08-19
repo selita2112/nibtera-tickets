@@ -4,7 +4,7 @@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Settings, UserPlus, Users, ShieldCheck, Building, UserCog, Images } from 'lucide-react';
+import { Settings, UserPlus, Users, ShieldCheck, Building, UserCog, Images, FileClock } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 
 export default function SettingsPageContent() {
@@ -72,6 +72,16 @@ export default function SettingsPageContent() {
       color: '#FBBF24',
       textColor: '#422006',
       permission: 'User Management:Read' // Assuming this permission is appropriate
+    },
+     {
+      title: 'Audit Logs',
+      icon: <FileClock className="h-5 w-5" />,
+      description: 'View a record of every action taken in the system — who did what and when — for accountability and troubleshooting.',
+      buttonText: 'Go to Audit Logs',
+      href: '/dashboard/audit-logs',
+      color: '#FBBF24',
+      textColor: '#422006',
+      permission: 'Audit Logs:Access'
     }
   ];
 

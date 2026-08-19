@@ -126,7 +126,7 @@ export default function UserManagementPage() {
 
     const handleRoleChange = async (userId: string, newRoleId: string) => {
         const oldUsers = [...users];
-        const newUsers = users.map(user => user.id === userId ? { ...user, roleId: newRoleId, role: roles.find(r => r.id === newRoleId)! } : user);
+           const newUsers = users.map(user => user.id === userId ? { ...user, roleId: newRoleId, role: roles.find(r => r.id === newRoleId)! as any } : user);
         setUsers(newUsers);
 
         try {
@@ -300,17 +300,21 @@ export default function UserManagementPage() {
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
-                          <TableCell>
-                            <Select
-                              value={user.roleId ?? ''}
-                              onValueChange={(newRoleId) => handleRoleChange(user.id, newRoleId)}
-                              disabled={!canChangeRole}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder={user.role?.name || "Select role"} />
-                              </SelectTrigger>
-                              <SelectContent>{roles.map((role) => (<SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>))}</SelectContent>
-                            </Select>
+                                                   <TableCell>
+                            {(user.role?.name === 'Admin' || user.role?.name === 'Staff') ? (
+                              <span className="text-sm font-medium">{user.role.name}</span>
+                            ) : (
+                              <Select
+                                value={user.roleId ?? ''}
+                                onValueChange={(newRoleId) => handleRoleChange(user.id, newRoleId)}
+                                disabled={!canChangeRole}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder={user.role?.name || "Select role"} />
+                                </SelectTrigger>
+                                <SelectContent>{roles.map((role) => (<SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>))}</SelectContent>
+                              </Select>
+                            )}
                           </TableCell>
                            <TableCell>
                             {isPendingApproval && isAdmin ? (

@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import { format } from 'date-fns';
 import { cookies } from 'next/headers';
 
-
+import { logAudit } from '@/lib/audit';
 import prisma from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
@@ -144,19 +144,35 @@ console.log({payload,superAppToken, NIB_PAYMENT_URL});
       console.log('[NIB INITIATE] NIB Payment raw response:', responseText);
 
       if (!response.ok) {
+         await logAudit({
+          action: 'PAYMENT_INITIATE', entityType: 'EventPayment', entityId: eventPayment.id,
+          details: { method: 'NIB', reason: 'api_failed', status: response.status, details: responseText }, status: 'FAILURE',
+        });
         return NextResponse.json({ error: 'NIB payment request failed', details: responseText }, { status: response.status });
       }
 
        if (!responseText) {
+         await logAudit({
+          action: 'PAYMENT_INITIATE', entityType: 'EventPayment', entityId: eventPayment.id,
+          details: { method: 'NIB', reason: 'empty_response' }, status: 'FAILURE',
+        });
         return NextResponse.json({ error: 'NIB payment response was empty.' }, { status: 502 });
       }
 
       responseData = JSON.parse(responseText);
       if (!responseData.token) {
+         await logAudit({
+          action: 'PAYMENT_INITIATE', entityType: 'EventPayment', entityId: eventPayment.id,
+          details: { method: 'NIB', reason: 'missing_token', raw: responseText }, status: 'FAILURE',
+        });
         return NextResponse.json({ error: 'NIB payment response invalid, missing payment token', raw: responseText }, { status: 502 });
       }
     } catch (err: any) {
       console.error('[NIB INITIATE] Payment request to NIB failed:', err);
+       await logAudit({
+        action: 'PAYMENT_INITIATE', entityType: 'EventPayment', entityId: eventPayment.id,
+        details: { method: 'NIB', reason: 'network_error', error: err.message }, status: 'FAILURE',
+      });
       return NextResponse.json({ error: 'Could not connect to NIB payment service.', details: err.message }, { status: 503 });
     }
 
@@ -167,7 +183,10 @@ console.log({payload,superAppToken, NIB_PAYMENT_URL});
     });
 
     console.log('[NIB INITIATE] Payment token from NIB saved successfully.');
-
+ await logAudit({
+      action: 'PAYMENT_INITIATE', entityType: 'EventPayment', entityId: eventPayment.id,
+      details: { method: 'NIB', eventId: pendingOrder.eventId, amount: total, transactionId }, status: 'SUCCESS',
+    });
     return NextResponse.json({
       success: true,
       paymentToken: responseData.token,
@@ -175,6 +194,10 @@ console.log({payload,superAppToken, NIB_PAYMENT_URL});
 
   } catch (err: any) {
     console.error('[NIB INITIATE] Unexpected top-level error:', err);
+    await logAudit({
+      action: 'PAYMENT_INITIATE', entityType: 'EventPayment',
+      details: { method: 'NIB', error: err.message }, status: 'FAILURE',
+    });
     return NextResponse.json({ error: err.message || 'An unexpected server error occurred.' }, { status: 500 });
   }
 }

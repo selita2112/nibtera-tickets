@@ -105,39 +105,55 @@ async function main() {
   });
   console.log('Staff role created.');
 
-  // 6. Ensure an Admin user exists (or is correctly linked to the Admin role).
-  const adminPassword = 'Admin@123';
-  const hashedPassword = await bcrypt.hash(adminPassword, 10);
+ // 6. Ensure Admin user exists and reset test password
+const adminPassword = 'Admin@123';
+const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
-  const existingAdmin = await prisma.user.findFirst({
-    where: { role: { name: 'Admin' } },
+const existingAdmin = await prisma.user.findFirst({
+  where: {
+    email: 'admin@example.com',
+  },
+});
+
+if (existingAdmin) {
+  await prisma.user.update({
+    where: {
+      id: existingAdmin.id,
+    },
+    data: {
+      phoneNumber: '0912345678',
+      password: hashedPassword,
+      roleId: adminRole.id,
+      status: 'ACTIVE',
+      passwordChangeRequired: false,
+      tokenVersion: {
+        increment: 1,
+      },
+    },
   });
 
-  if (existingAdmin) {
-    await prisma.user.update({
-      where: { id: existingAdmin.id },
-      data: { roleId: adminRole.id },
-    });
-    console.log(`Admin user (${existingAdmin.email}) role updated.`);
-  } else {
-    await prisma.user.create({
-      data: {
-        id: cuid(),
-        firstName: 'Admin',
-        lastName: 'User',
-        phoneNumber: '0912345678',
-        email: 'admin@example.com',
-        password: hashedPassword,
-        roleId: adminRole.id,
-        nibBankAccount: '7000101672811', // Placeholder account
-        status: 'ACTIVE',
-        passwordChangeRequired: true,
-        tokenVersion: 1,
-      },
-    });
-    console.log('Admin user created.');
-  }
+  console.log(
+    `Admin user (${existingAdmin.email}) updated and password reset to Admin@123.`
+  );
+} else {
+  await prisma.user.create({
+    data: {
+      id: cuid(),
+      firstName: 'Admin',
+      lastName: 'User',
+      phoneNumber: '0912345678',
+      email: 'admin@example.com',
+      password: hashedPassword,
+      roleId: adminRole.id,
+      nibBankAccount: '7000101672811',
+      status: 'ACTIVE',
+      passwordChangeRequired: false,
+      tokenVersion: 1,
+    },
+  });
 
+  console.log('Admin user created with password Admin@123.');
+}
   console.log('Seeding finished successfully.');
 }
 

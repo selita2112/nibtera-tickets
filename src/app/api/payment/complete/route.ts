@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { randomUUID } from 'crypto';
+import { logAudit } from '@/lib/audit';
 
 export async function POST(req: NextRequest) {
     try {
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
         // Simulate success by calling the notify logic via DB operations
         const { name, phoneNumber, userId, quantity } = order.attendeeData as { name: string, phoneNumber?: string, userId?: string, quantity: number };
 
-        const createdAttendee = await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx) => {
             if (!order.ticketTypeId) {
                 throw new Error('Missing ticketTypeId');
             }
@@ -116,18 +117,38 @@ export async function POST(req: NextRequest) {
                 }
             }
             await tx.pendingOrder.update({ where: { id: order.id }, data: { status: 'COMPLETED', attendeeId: last?.id } });
-            return last;
+            return { attendee: last, ticketTypeName: ticketType.name };
         });
 
         revalidatePath(`/events/${order.eventId}`);
         revalidatePath('/');
         revalidatePath('/tickets');
+             await logAudit({
+      action: 'PAYMENT_COMPLETE',
+      entityType: 'PendingOrder',
+      entityId: order.id,
+      details: {
+        eventId: order.eventId,
+        transactionId: order.transactionId,
+      attendeeId: result?.attendee?.id,
+        quantity: quantity || 1,
+        ticketType: result?.ticketTypeName,
+        amount: 0,
+      },
+      status: 'SUCCESS',
+    });
 
-        return NextResponse.json({ message: 'Completed', attendeeId: createdAttendee?.id });
+        return NextResponse.json({ message: 'Completed', attendeeId:result?.attendee?.id });
     } catch (e: any) {
         console.error('Complete payment error', e);
         const message = e?.message || 'An error occurred while issuing ticket(s) and finalizing the order.';
         const status = String(message).includes('maximum number of free tickets') ? 400 : 500;
+        await logAudit({
+          action: 'PAYMENT_COMPLETE',
+          entityType: 'PendingOrder',
+          details: { error: message },
+          status: 'FAILURE',
+        });
         return NextResponse.json(
           {
             error: 'Failed to complete order',

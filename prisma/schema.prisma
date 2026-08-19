@@ -26,6 +26,7 @@ model User {
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
   organizerId            String?
+  yagoutMerchantId       String?
   attendees              Attendee[]
   events                 Event[]    @relation("EventOrganizer")
   sessions               Session[]
@@ -99,27 +100,29 @@ model Branch {
 }
 
 model Event {
-  id              Int            @id @default(autoincrement())
-  name            String
-  description     String
-  startDate       DateTime
-  endDate         DateTime?
-  location        String
-  hint            String?
-  image           String?
-  category        String
-  organizerId     String
-  status          EventStatus    @default(PENDING)
-  rejectionReason String?
-  nibBankAccount  String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  attendees       Attendee[]
-  organizer       User           @relation("EventOrganizer", fields: [organizerId], references: [id])
-  payments        EventPayment[]
-  pendingOrders   PendingOrder[]
-  promoCodes      PromoCode[]
-  ticketTypes     TicketType[]
+  id               Int             @id @default(autoincrement())
+  name             String
+  description      String
+  startDate        DateTime
+  endDate          DateTime?
+  location         String
+  hint             String?
+  image            String?
+  category         String
+  organizerId      String
+  status           EventStatus     @default(PENDING)
+  rejectionReason  String?
+  nibBankAccount   String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  yagoutMerchantId String?
+  attendees        Attendee[]
+  organizer        User            @relation("EventOrganizer", fields: [organizerId], references: [id])
+  payments         EventPayment[]
+  pendingOrders    PendingOrder[]
+  promoCodes       PromoCode[]
+  ticketTypes      TicketType[]
+  YagoutPayment    YagoutPayment[]
 }
 
 model TicketType {
@@ -164,36 +167,38 @@ model PromoCode {
 }
 
 model PendingOrder {
-  id               Int            @id @default(autoincrement())
-  transactionId    String         @unique
-  arifpaySessionId String?        @unique
+  id               Int             @id @default(autoincrement())
+  transactionId    String          @unique
+  arifpaySessionId String?         @unique
   eventId          Int
   ticketTypeId     Int
   attendeeData     Json
   promoCode        String?
-  status           String         @default("PENDING")
-  attendeeId       Int?           @unique
-  createdAt        DateTime       @default(now())
+  status           String          @default("PENDING")
+  attendeeId       Int?            @unique
+  createdAt        DateTime        @default(now())
   payments         EventPayment[]
-  attendee         Attendee?      @relation(fields: [attendeeId], references: [id])
-  event            Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  attendee         Attendee?       @relation(fields: [attendeeId], references: [id])
+  event            Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  YagoutPayment    YagoutPayment[]
 }
 
 model EventPayment {
-  id             String       @id @default(cuid())
+  id             String         @id @default(cuid())
   eventId        Int
   pendingOrderId Int
-  amount         Decimal      @db.Decimal(10, 2)
+  amount         Decimal        @db.Decimal(10, 2)
   method         String
   status         String
-  transactionId  String       @unique
+  transactionId  String         @unique
   reference      String?
   sessionId      String?
   paymentDate    DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  pendingOrder   PendingOrder @relation(fields: [pendingOrderId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  pendingOrder   PendingOrder   @relation(fields: [pendingOrderId], references: [id], onDelete: Cascade)
+  YagoutPayment  YagoutPayment?
 }
 
 model FailedIpAttempt {
@@ -217,6 +222,53 @@ model HomeCarouselAd {
   updatedAt DateTime @updatedAt
 }
 
+model YagoutPayment {
+  id             String       @id
+  eventId        Int
+  pendingOrderId Int
+  eventPaymentId String       @unique
+  orderNo        String       @unique
+  meId           String
+  amount         Decimal      @db.Decimal(12, 2)
+  currency       String       @default("ETB")
+  status         String       @default("PENDING")
+  agRef          String?      @unique
+  pgRef          String?      @unique
+  resCode        String?
+  resMessage     String?
+  callbackToken  String?
+  paymentDate    DateTime?
+  rawResponse    Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime
+  Event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  EventPayment   EventPayment @relation(fields: [eventPaymentId], references: [id], onDelete: Cascade)
+  PendingOrder   PendingOrder @relation(fields: [pendingOrderId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([eventPaymentId])
+  @@index([orderNo])
+  @@index([pendingOrderId])
+  @@index([status])
+}
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  userName   String?
+  userRole   String?
+  action     String
+  entityType String?
+  entityId   String?
+  details    Json?
+  ip         String?
+  userAgent  String?
+  status     String   @default("SUCCESS")
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
 enum UserStatus {
   ACTIVE
   INACTIVE

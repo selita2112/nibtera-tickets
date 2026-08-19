@@ -54,7 +54,14 @@ export async function POST(req: NextRequest) {
       where: { phoneNumber: normalizedPhone },
       include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
     });
-
+console.log('LOGIN DEBUG:', {
+  enteredPhone: phoneNumber,
+  normalizedPhone,
+  userFound: !!user,
+  userPhone: user?.phoneNumber,
+  userStatus: user?.status,
+  hasPassword: !!user?.password,
+});
     if (!user || !user.password) {
       await recordIpFailure(ip, {
         maxAttempts: Number(process.env.MAX_LOGIN_ATTEMPTS || 10),
@@ -85,7 +92,9 @@ export async function POST(req: NextRequest) {
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
-
+console.log('PASSWORD DEBUG:', {
+  passwordValid: isPasswordValid,
+});
     if (!isPasswordValid) {
       await recordIpFailure(ip, {
         maxAttempts: Number(process.env.MAX_LOGIN_ATTEMPTS || 10),

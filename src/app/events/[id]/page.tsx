@@ -170,7 +170,7 @@ export default function PublicEventDetailPage() {
   const [attendeePhone, setAttendeePhone] = useState('');
   const [isPhoneFromSession, setIsPhoneFromSession] = useState(false);
   const [walletType, setWalletType] = useState<string>(YAGOUT_WALLET_OPTIONS[0].value);
-  const [paymentMethod, setPaymentMethod] = useState<'direct' | 'hosted'>('direct');
+ const [paymentMethod, setPaymentMethod] = useState<'direct' | 'hosted'>('hosted');
   const [existingClaimsCount, setExistingClaimsCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -905,38 +905,8 @@ export default function PublicEventDetailPage() {
                 />
               </div>
             </div>
-            {!isFreeTicketPurchase && (
-              <div className="grid gap-2">
-                <Label htmlFor="payment-method">Payment Method</Label>
-                <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as 'direct' | 'hosted')}>
-                  <SelectTrigger id="payment-method">
-                    <SelectValue placeholder="Select a payment method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="direct">Pay here (wallet approval prompt)</SelectItem>
-                    <SelectItem value="hosted">Pay on YagoutPay's checkout page</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {!isFreeTicketPurchase && paymentMethod === 'direct' && (
-              <div className="grid gap-2">
-                <Label htmlFor="wallet">Pay With</Label>
-                <Select value={walletType} onValueChange={setWalletType}>
-                  <SelectTrigger id="wallet">
-                    <SelectValue placeholder="Select a wallet" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {YAGOUT_WALLET_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  You'll get a payment approval prompt on this wallet using the phone number above.
-                </p>
-              </div>
-            )}
+           
+           
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -1004,24 +974,7 @@ export default function PublicEventDetailPage() {
           // full-page redirect; result arrives later via /yagoutPay-callback.
           await payWithYagoutHosted(transactionId, total);
           // form.submit() above navigates the page away; nothing else to do here.
-        } else {
-          // Customer chose to pay directly, via YagoutPay's API Integration flow.
-          // This is a single synchronous call: the user stays on our page the
-          // whole time, and the result (success/failure) comes back directly —
-          // no redirect to Yagout's hosted checkout, no callback URL.
-          const chargeResult = await payWithYagoutApi(transactionId, total, walletType, attendeePhone);
-
-          if (chargeResult.success && chargeResult.attendeeId) {
-            try {
-              sessionStorage.setItem('showSuccessToast', 'true');
-            } catch (e) {
-              console.warn('Could not set sessionStorage flag');
-            }
-            router.push(`/ticket/${chargeResult.attendeeId}/confirmation`);
-          } else {
-            throw new Error(chargeResult.error || 'Payment was not approved. Please try again.');
-          }
-        }
+        } 
 
       } catch (err: any) {
         console.error("Payment initiation error:", err);

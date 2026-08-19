@@ -14,7 +14,7 @@ import { sendTempPassword, sendPendingEventNotification } from '@/lib/email';
 import cuid from 'cuid';
 import bcrypt from 'bcryptjs';
 import { hasPermission, validatePermissions } from './permissions';
-
+import { logAudit } from './audit';
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // Helper to ensure data is serializable
@@ -245,7 +245,7 @@ export async function createHomeCarouselAd(data: {
     sortOrder?: number;
     isActive?: boolean;
 }) {
-    await requireAdmin();
+     const user = await requireAdmin();
     if (!data.imageUrl || typeof data.imageUrl !== 'string' || !data.imageUrl.trim()) {
         throw new Error('Image is required.');
     }
@@ -269,6 +269,11 @@ export async function createHomeCarouselAd(data: {
     });
     revalidatePath('/');
     revalidatePath('/dashboard/settings/homeads');
+    await logAudit({
+      userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+      action: 'CAROUSEL_AD_CREATE', entityType: 'HomeCarouselAd', entityId: ad.id,
+      details: { title: ad.title },
+    });
     return serialize(ad);
 }
 
@@ -283,7 +288,7 @@ export async function updateHomeCarouselAd(
         isActive?: boolean;
     }
 ) {
-    await requireAdmin();
+    const user = await requireAdmin();
     const payload: any = {};
     if (data.imageUrl !== undefined) {
         if (!data.imageUrl || !String(data.imageUrl).trim()) {
@@ -305,16 +310,24 @@ export async function updateHomeCarouselAd(
     });
     revalidatePath('/');
     revalidatePath('/dashboard/settings/home-ads');
+      await logAudit({
+      userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+      action: 'CAROUSEL_AD_UPDATE', entityType: 'HomeCarouselAd', entityId: id,
+    });
     return serialize(ad);
 }
 
 export async function deleteHomeCarouselAd(id: number) {
-    await requireAdmin();
+     const user=await requireAdmin();
     await prisma.homeCarouselAd.delete({
         where: { id },
     });
     revalidatePath('/');
     revalidatePath('/dashboard/settings/home-ads');
+    await logAudit({
+      userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+      action: 'CAROUSEL_AD_DELETE', entityType: 'HomeCarouselAd', entityId: id,
+    });
     return { ok: true };
 }
 
@@ -450,6 +463,11 @@ export async function addEvent(data: any) {
             rejectionReason: null,
         },
     });
+await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'EVENT_CREATE', entityType: 'Event', entityId: newEvent.id,
+  details: { name: newEvent.name, status: newEvent.status },
+});
 
     // Notify Admin(s) if event is PENDING approval
     if (newEvent.status === 'PENDING') {
@@ -492,7 +510,7 @@ export async function addEvent(data: any) {
         if (ticket.locationPrices && ticket.locationPrices.length > 0) {
             for (const config of ticket.locationPrices) {
                 if (config.location && config.price >= 0 && config.quantity >= 0) {
-                     await prisma.ticketType.create({
+                     const newTicketType =await prisma.ticketType.create({
                         data: {
                             name: `${ticket.name} - ${config.location}`,
                             description: ticket.description,
@@ -503,7 +521,13 @@ export async function addEvent(data: any) {
                             locationPrices: ticket.locationPrices,
                         } as any
                     });
+                     await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'TICKET_TYPE_CREATE', entityType: 'TicketType', entityId: newTicketType.id,
+  details: { name: newTicketType.name, eventId: newEvent.id, location: config.location },
+});
                 }
+                
             }
         }
       }
@@ -547,6 +571,11 @@ export async function updateEvent(id: number, data: any) {
             status: isAdmin ? eventToUpdate.status : 'PENDING',
         }
     });
+await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'EVENT_UPDATE', entityType: 'Event', entityId: updatedEvent.id,
+  details: { name: updatedEvent.name },
+});
 
     // Notify Admin(s) if event is PENDING approval after update
     if (updatedEvent.status === 'PENDING' && !isAdmin) {
@@ -609,7 +638,11 @@ export async function updateEventStatus(id: number, status: EventStatus, rejecti
             rejectionReason: status === 'REJECTED' ? rejectionReason : null,
         }
     });
-
+await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'EVENT_STATUS_UPDATE', entityType: 'Event', entityId: updatedEvent.id,
+  details: { status, rejectionReason },
+});
     revalidatePath('/dashboard/events');
     revalidatePath('/dashboard');
     revalidatePath(`/dashboard/events/${id}`);
@@ -637,7 +670,12 @@ export async function deleteEvent(id: number) {
     prisma.eventPayment.deleteMany({ where: { eventId: id } }),
     prisma.pendingOrder.deleteMany({ where: { eventId: id } }),
     prisma.event.delete({ where: { id } }),
+    
   ]);
+  await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'EVENT_DELETE', entityType: 'Event', entityId: id,
+});
   
   revalidatePath('/dashboard/events');
   revalidatePath('/');
@@ -661,7 +699,7 @@ export async function addTicketType(
 
     for (const config of data.locationPrices) {
         if (config.location && config.price >= 0 && config.quantity >= 0) {
-            await prisma.ticketType.create({
+           const newTicketType = await prisma.ticketType.create({
                 data: {
                     name: `${data.name} - ${config.location}`,
                     description: data.description,
@@ -672,7 +710,14 @@ export async function addTicketType(
                     locationPrices: data.locationPrices,
                 } as any
             });
+            await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'TICKET_TYPE_CREATE', entityType: 'TicketType', entityId: newTicketType.id,
+  details: { name: newTicketType.name, eventId, location: config.location },
+});
+
         }
+        
     }
     revalidatePath(`/dashboard/events/${eventId}`);
 }
@@ -735,6 +780,10 @@ export async function updateTicketType(ticketTypeId: number, data: any) {
         locationPrices: nextLocationPrices,
     } as any,
   });
+  await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'TICKET_TYPE_UPDATE', entityType: 'TicketType', entityId: ticketTypeId,
+});
   revalidatePath(`/dashboard/events/${updatedTicketType.eventId}`);
   return serialize(updatedTicketType);
 }
@@ -755,6 +804,10 @@ export async function deleteTicketType(ticketTypeId: number) {
   }
 
   await prisma.ticketType.delete({ where: { id: ticketTypeId } });
+  await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'TICKET_TYPE_DELETE', entityType: 'TicketType', entityId: ticketTypeId,
+});
   revalidatePath(`/dashboard/events/${ticketType.eventId}`);
 }
 
@@ -787,6 +840,11 @@ export async function addPromoCode(eventId: number, data: any, allTicketTypes?: 
             eventId: eventId,
         }
     });
+    await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'PROMO_CODE_CREATE', entityType: 'PromoCode', entityId: newPromoCode.id,
+  details: { code: newPromoCode.code, eventId: newPromoCode.eventId },
+});
     revalidatePath(`/dashboard/events/${eventId}`);
     return serialize(newPromoCode);
 }
@@ -822,6 +880,10 @@ export async function updatePromoCode(promoCodeId: number, data: any, allTicketT
             maxUses: data.maxUses,
         },
     });
+    await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'PROMO_CODE_UPDATE', entityType: 'PromoCode', entityId: promoCodeId,
+});
     revalidatePath(`/dashboard/events/${updatedPromoCode.eventId}`);
     return serialize(updatedPromoCode);
 }
@@ -843,6 +905,10 @@ export async function deletePromoCode(promoCodeId: number) {
         }
 
         await prisma.promoCode.delete({ where: { id: promoCodeId } });
+        await logAudit({
+  userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+  action: 'PROMO_CODE_DELETE', entityType: 'PromoCode', entityId: promoCodeId,
+});
         revalidatePath(`/dashboard/events/${promoCode.eventId}`);
         return { ok: true };
     }
@@ -1133,6 +1199,11 @@ export async function updateUser(userId: string, data: Partial<User>) {
 
     revalidatePath('/dashboard/settings/users');
     revalidatePath(`/dashboard/settings/users/${userId}/edit`);
+     await logAudit({
+      userId: requester.id, userName: `${requester.firstName} ${requester.lastName}`, userRole: requester.role.name,
+      action: 'USER_UPDATE', entityType: 'User', entityId: userId,
+      details: { firstName, lastName, roleId },
+    });
     return serialize(updatedUser);
 }
 
@@ -1174,6 +1245,11 @@ export async function updateUserRole(userId: string, newRoleId: string) {
     // Ensure global/server components that depend on permissions are refreshed
     revalidatePath('/');
     revalidatePath('/dashboard');
+       await logAudit({
+      userId: requester.id, userName: `${requester.firstName} ${requester.lastName}`, userRole: requester.role.name,
+      action: 'USER_ROLE_UPDATE', entityType: 'User', entityId: userId,
+      details: { newRoleId },
+    });
     const { password: _password, ...rest } = user;
     return serialize(rest);
 }
@@ -1210,6 +1286,11 @@ export async function updateUserStatus(userId: string, status: UserStatus) {
     });
 
     revalidatePath('/dashboard/settings/users');
+      await logAudit({
+      userId: requester.id, userName: `${requester.firstName} ${requester.lastName}`, userRole: requester.role.name,
+      action: 'USER_STATUS_UPDATE', entityType: 'User', entityId: userId,
+      details: { status },
+    });
     const { password: _password, ...rest } = user;
     return serialize(rest);
 }
@@ -1262,6 +1343,11 @@ export async function deleteUser(userId: string, phoneNumber: string) {
     });
     
     revalidatePath('/dashboard/settings/users');
+     await logAudit({
+      userId: currentUser.id, userName: `${currentUser.firstName} ${currentUser.lastName}`, userRole: currentUser.role.name,
+      action: 'USER_DELETE', entityType: 'User', entityId: userId,
+      details: { phoneNumber },
+    });
     
     return { ok: true };
   } catch (err: any) {
@@ -1351,7 +1437,7 @@ export async function getRoleById(id: string) {
 
 
 export async function createRole(data: { name: string; description: string; permissions: string[] }) {
-    await requireAdmin();
+     const user = await requireAdmin();
     const { name, description, permissions } = data;
     // Normalize incoming permissions: enforce string type, trim whitespace, remove empty and duplicates
     const normalizedPermissions = Array.isArray(permissions)
@@ -1382,11 +1468,16 @@ export async function createRole(data: { name: string; description: string; perm
     revalidatePath('/dashboard/settings/roles/new');
     revalidatePath('/');
     revalidatePath('/dashboard');
+    await logAudit({
+      userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+      action: 'ROLE_CREATE', entityType: 'Role', entityId: role.id,
+      details: { name: role.name, permissions: normalizedPermissions },
+    });
     return serialize(role);
 }
 
 export async function updateRole(id: string, data: Partial<Role> & { permissions: string | string[] }) {
-    await requireAdmin();
+   const user = await requireAdmin();
     let permissionsArray: string[];
     
     if (typeof data.permissions === 'string') {
@@ -1431,13 +1522,17 @@ export async function updateRole(id: string, data: Partial<Role> & { permissions
     revalidatePath(`/dashboard/settings/roles/${id}/edit`);
     revalidatePath('/');
     revalidatePath('/dashboard');
-    
+      await logAudit({
+      userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+      action: 'ROLE_UPDATE', entityType: 'Role', entityId: id,
+      details: { name: data.name, permissions: permissionsArray },
+    });
     return serialize(role);
 }
 
 
 export async function deleteRole(id: string) {
-    await requireAdmin();
+    const user=await requireAdmin();
     const usersWithRole = await prisma.user.count({ where: { roleId: id } });
     if (usersWithRole > 0) {
         throw new Error("Cannot delete role. It is assigned to one or more users. Please reassign users before deleting.");
@@ -1446,6 +1541,11 @@ export async function deleteRole(id: string) {
     const role = await prisma.role.delete({ where: { id } });
     revalidatePath('/dashboard/settings');
     revalidatePath('/dashboard/settings/roles');
+     await logAudit({
+      userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+      action: 'ROLE_DELETE', entityType: 'Role', entityId: id,
+      details: { name: role.name },
+    });
     return serialize(role);
 }
 
@@ -1458,7 +1558,13 @@ export async function updatePasswordFlag(userId: string, passwordChangeRequired:
         where: { id: userId },
         data: { passwordChangeRequired: passwordChangeRequired },
     });
+    
     revalidatePath('/profile');
+     await logAudit({
+      userId: current.id, userName: `${current.firstName} ${current.lastName}`, userRole: current.role.name,
+      action: 'PASSWORD_FLAG_UPDATE', entityType: 'User', entityId: userId,
+      details: { passwordChangeRequired },
+    });
 }
 
 
@@ -1498,6 +1604,10 @@ export async function resetUserPassword(userId: string) {
     }
 
     revalidatePath('/dashboard/settings/users');
+    await logAudit({
+      userId: currentUser.id, userName: `${currentUser.firstName} ${currentUser.lastName}`, userRole: currentUser.role.name,
+      action: 'PASSWORD_RESET', entityType: 'User', entityId: userId,
+    });
     return { ok: true };
 }
 
@@ -1545,6 +1655,10 @@ export async function resetStaffPassword(userId: string) {
 
     revalidatePath('/dashboard/settings/staff');
     revalidatePath('/dashboard/settings/users');
+    await logAudit({
+      userId: currentUser.id, userName: `${currentUser.firstName} ${currentUser.lastName}`, userRole: currentUser.role.name,
+      action: 'STAFF_PASSWORD_RESET', entityType: 'User', entityId: userId,
+    });
     return { ok: true };
 }
 
@@ -1690,7 +1804,22 @@ export async function purchaseTickets(request: {
 
         revalidatePath(`/events/${eventId}`);
         revalidatePath('/dashboard');
-        
+          await logAudit({
+          userId: user?.id ?? null,
+          userName: user ? `${user.firstName} ${user.lastName}` : attendeeDetails.name,
+          userRole: user?.role.name,
+          action: 'TICKET_PURCHASE',
+          entityType: 'PendingOrder',
+          entityId: order.id,
+          details: {
+            eventId,
+            attendeeId: newAttendee.id,
+            tickets: tickets.map(t => ({ id: t.id, name: t.name, quantity: t.quantity })),
+            amount: finalAmount,
+            promoCode: promoCode ?? null,
+            free: allSelectedFree,
+          },
+        });
         return serialize({
             success: true,
             redirectUrl: allSelectedFree ? `/ticket/${newAttendee.id}/confirmation` : `/payment/success?session_id=${paymentSessionId}`
@@ -1910,7 +2039,11 @@ export async function checkInAttendee(attendeeIdentifier: number | string) {
         });
         
         revalidatePath(`/dashboard/events/${attendee.eventId}`);
-
+ await logAudit({
+          userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+          action: 'ATTENDEE_CHECKIN', entityType: 'Attendee', entityId: attendee.id,
+          details: { eventId: attendee.eventId, ticketType: attendee.ticketType?.name },
+        });
         return { data: serialize(updatedAttendee) };
 
     } catch (error) {
@@ -1921,7 +2054,7 @@ export async function checkInAttendee(attendeeIdentifier: number | string) {
 
 // Branch and District Actions
 export async function createDistrict(data: { districtName: string; contactPersonName: string; contactPersonPhone: string; }) {
-  await requirePermission('Staff Management:Access');
+  const user =await requirePermission('Staff Management:Access');
   const { districtName, ...rest } = data;
   const normalizedPhone = normalizeEthiopianPhoneStrict(rest.contactPersonPhone);
   const district = await prisma.district.create({
@@ -1932,11 +2065,16 @@ export async function createDistrict(data: { districtName: string; contactPerson
     },
   });
   revalidatePath('/dashboard/settings/branch-district-registration');
+  await logAudit({
+    userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+    action: 'DISTRICT_CREATE', entityType: 'District', entityId: district.id,
+    details: { name: district.name },
+  });
   return serialize(district);
 }
 
 export async function createBranch(data: { branchName: string; districtId: string; contactPersonName: string; contactPersonPhone: string; }) {
-  await requirePermission('Staff Management:Access');
+    const user =await requirePermission('Staff Management:Access');
   const { branchName, ...rest } = data;
   const normalizedPhone = normalizeEthiopianPhoneStrict(rest.contactPersonPhone);
   const branch = await prisma.branch.create({
@@ -1947,6 +2085,11 @@ export async function createBranch(data: { branchName: string; districtId: strin
     },
   });
   revalidatePath('/dashboard/settings/branch-district-registration');
+   await logAudit({
+    userId: user.id, userName: `${user.firstName} ${user.lastName}`, userRole: user.role.name,
+    action: 'BRANCH_CREATE', entityType: 'Branch', entityId: branch.id,
+    details: { name: branch.name, districtId: branch.districtId },
+  });
   return serialize(branch);
 }
 
@@ -2075,6 +2218,11 @@ export async function addUser(
             tempPassword: tempPassword,
         });
 
+        await logAudit({
+          userId: creator.id, userName: `${creator.firstName} ${creator.lastName}`, userRole: creator.role.name,
+          action: isStaff ? 'STAFF_CREATE' : 'USER_CREATE', entityType: 'User', entityId: user.id,
+          details: { firstName: user.firstName, lastName: user.lastName, roleId: user.roleId },
+        });
         return { success: true };
 
     } catch (error: any) {
@@ -2092,4 +2240,49 @@ export async function addUser(
 
         return { success: false, error: error.message || "An unexpected error occurred." };
     }
+    
+}
+export async function getAuditLogs(filters?: {
+  category?: 'transactions' | 'other';
+  userId?: string;
+  action?: string;
+  startDate?: Date;
+  endDate?: Date;
+}) 
+
+{
+  const user = await getCurrentUser();
+if (!user || !hasPermission(user.role as any, 'Audit Logs:Access')) {
+    return [];
+  }
+
+  const where: any = {};
+
+  if (filters?.category === 'transactions') {
+    where.OR = [
+      { action: { startsWith: 'PAYMENT_' } },
+      { action: 'TICKET_PURCHASE' },
+    ];
+  } else if (filters?.category === 'other') {
+    where.AND = [
+      { action: { not: { startsWith: 'PAYMENT_' } } },
+      { action: { not: 'TICKET_PURCHASE' } },
+    ];
+  }
+
+  if (filters?.userId) where.userId = filters.userId;
+  if (filters?.action) where.action = filters.action;
+  if (filters?.startDate || filters?.endDate) {
+    where.createdAt = {};
+    if (filters.startDate) where.createdAt.gte = filters.startDate;
+    if (filters.endDate) where.createdAt.lte = filters.endDate;
+  }
+
+  const logs = await prisma.auditLog.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+  });
+
+  return serialize(logs);
 }
