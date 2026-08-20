@@ -122,18 +122,6 @@ const existingAttempts = await prisma.eventPayment.count({
     console.log('[YAGOUT INITIATE] hash input string (before sha256+encrypt):', hashInputRaw);
     console.log('[YAGOUT INITIATE] final hash sent:', hash);
     console.log('======================================================================');
-     await logAudit({
-      action: 'PAYMENT_INITIATE',
-      entityType: 'EventPayment',
-      details: {
-        orderNo,
-        eventId: pendingOrder.eventId,
-        pendingOrderTransactionId,
-        amount,
-        method: 'YAGOUTPAY',
-      },
-      status: 'SUCCESS',
-    });
     return NextResponse.json({
       success: true,
       postUrl,
@@ -143,12 +131,6 @@ const existingAttempts = await prisma.eventPayment.count({
     });
   } catch (err: any) {
     console.error('[YAGOUT INITIATE] Unexpected error:', err);
-     await logAudit({
-      action: 'PAYMENT_INITIATE',
-      entityType: 'EventPayment',
-      details: { error: err.message || 'Unexpected error' },
-      status: 'FAILURE',
-    });
     return NextResponse.json({ error: err.message || 'An unexpected server error occurred.' }, { status: 500 });
   }
 }

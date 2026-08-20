@@ -106,6 +106,16 @@ else {
 
   const pendingOrder = eventPayment.pendingOrder;
   const isSuccess = txn.status?.toLowerCase() === 'successful';
+   const attendeeDataForLog = pendingOrder.attendeeData as { tickets?: { id: number; quantity: number }[] } | null;
+  let ticketTypeNamesForLog: string[] = [];
+  if (attendeeDataForLog?.tickets?.length) {
+    const ticketTypesForLog = await prisma.ticketType.findMany({
+      where: { id: { in: attendeeDataForLog.tickets.map(t => t.id) } },
+      select: { name: true },
+    });
+    ticketTypeNamesForLog = ticketTypesForLog.map(t => t.name);
+  }
+  const orderAmountForLog = Number(eventPayment.amount);
   const expectedAmount = Number(eventPayment.amount).toFixed(2);
 const receivedAmount = Number(txn.amount).toFixed(2);
 if (expectedAmount !== receivedAmount) {
@@ -114,11 +124,18 @@ if (expectedAmount !== receivedAmount) {
     where: { id: eventPayment.id },
     data: { status: 'FAILED', reference: txn.pgRef || txn.agRef || null },
   });
-   await logAudit({
+    await logAudit({
     action: 'PAYMENT_FAILED',
     entityType: 'EventPayment',
     entityId: eventPayment.id,
-    details: { orderNo: txn.orderNo, reason: 'amount_mismatch', expectedAmount, receivedAmount },
+    details: {
+      orderNo: txn.orderNo,
+      reason: 'amount_mismatch',
+      expectedAmount,
+      receivedAmount,
+      amount: orderAmountForLog,
+      ticketType: ticketTypeNamesForLog.join(', '),
+    },
     status: 'FAILURE',
   });
   return redirectTo(request, 'failure', pendingOrder.transactionId, 'amount_mismatch');
@@ -134,11 +151,16 @@ if (expectedAmount !== receivedAmount) {
       where: { id: eventPayment.id },
       data: { status: 'FAILED', reference: txn.pgRef || txn.agRef || null },
     });
-     await logAudit({
+         await logAudit({
       action: 'PAYMENT_FAILED',
       entityType: 'EventPayment',
       entityId: eventPayment.id,
-      details: { orderNo: txn.orderNo, reason: txn.resMessage || 'payment_failed' },
+      details: {
+        orderNo: txn.orderNo,
+        reason: txn.resMessage || 'payment_failed',
+        amount: orderAmountForLog,
+        ticketType: ticketTypeNamesForLog.join(', '),
+      },
       status: 'FAILURE',
     });
     return redirectTo(request, 'failure', pendingOrder.transactionId, txn.resMessage || 'payment_failed');
@@ -177,7 +199,7 @@ if (expectedAmount !== receivedAmount) {
       }
 
       let lastAttendee = null;
-
+      const purchasedTicketTypeNames: string[] = [];
       for (const ticketInfo of tickets) {
         const ticketTypeId = ticketInfo.id;
         const quantity = ticketInfo.quantity || 1;
@@ -187,7 +209,7 @@ if (expectedAmount !== receivedAmount) {
         if (ticketType.total - ticketType.sold < quantity) {
           throw new Error(`Not enough tickets available for "${ticketType.name}".`);
         }
-
+        purchasedTicketTypeNames.push(ticketType.name);
         const attendeesToCreate = Array.from({ length: quantity }).map(() => ({
           name,
           phoneNumber: normalizedPhone || undefined,
@@ -237,7 +259,7 @@ if (expectedAmount !== receivedAmount) {
         },
       });
 
-      return lastAttendee;
+          return { attendee: lastAttendee, ticketTypeNames: purchasedTicketTypeNames };
     });
 
     revalidatePath(`/events/${eventPayment.eventId}`);
@@ -245,16 +267,17 @@ if (expectedAmount !== receivedAmount) {
     revalidatePath('/tickets');
     revalidatePath(`/payment/success?transaction_id=${pendingOrder.transactionId}`);
 
-    console.log(`YagoutPay: payment confirmed for order ${pendingOrder.transactionId}, attendee ${createdAttendee?.id}.`);
-    await logAudit({
+    console.log(`YagoutPay: payment confirmed for order ${pendingOrder.transactionId}, attendee ${ createdAttendee?.attendee?.id}.`);
+      await logAudit({
       action: 'PAYMENT_COMPLETE',
       entityType: 'EventPayment',
       entityId: eventPayment.id,
       details: {
         orderNo: txn.orderNo,
         eventId: eventPayment.eventId,
-        amount: txn.amount,
-        attendeeId: createdAttendee?.id,
+        amount: Number(txn.amount),
+        attendeeId:  createdAttendee?.attendee?.id,
+        ticketType: createdAttendee?.ticketTypeNames?.join(', '),
       },
       status: 'SUCCESS',
     });
@@ -265,6 +288,19 @@ if (expectedAmount !== receivedAmount) {
       where: { id: eventPayment.id },
       data: { status: 'FAILED', reference: txn.pgRef || txn.agRef || null },
     }).catch(() => {});
+         await logAudit({
+      action: 'PAYMENT_FAILED',
+      entityType: 'EventPayment',
+      entityId: eventPayment.id,
+      details: {
+        orderNo: txn.orderNo,
+        reason: 'ticket_issuance_failed',
+        error: String(error?.message ?? error),
+        amount: orderAmountForLog,
+        ticketType: ticketTypeNamesForLog.join(', '),
+      },
+      status: 'FAILURE',
+    });
     return redirectTo(request, 'failure', pendingOrder.transactionId, 'ticket_issuance_failed');
   }
 }

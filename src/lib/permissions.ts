@@ -10,6 +10,7 @@ export const PERMISSIONS_GROUPS: Record<string, string[]> = {
   'Role Management': ['Create', 'Read', 'Update', 'Delete'],
   'Staff Management': ['Access'],
   'Audit Logs': ['Access'],
+    'Support Activity': ['Access'],
 };
 
 export const FLAT_PERMISSIONS: string[] = Object.entries(PERMISSIONS_GROUPS).flatMap(([cat, actions]) =>
