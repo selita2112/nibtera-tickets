@@ -69,14 +69,24 @@ export async function GET(req: NextRequest) {
   try {
     const secure = shouldUseSecureCookies();
     const superAppToken = authHeader.substring(7);
-    const externalResponse = await fetch(VALIDATE_TOKEN_URL, {
-      method: "GET",
-      headers: {
-        Authorization: authHeader,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
+    let externalResponse: Response;
+try {
+  externalResponse = await fetch(VALIDATE_TOKEN_URL, {
+    method: "GET",
+    headers: {
+      Authorization: authHeader,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+} catch (e: any) {
+  console.error("[PORTAL_CONNECT] Could not reach token validation URL:", {
+    url: VALIDATE_TOKEN_URL,
+    message: e?.message,
+    cause: e?.cause?.code || e?.cause?.message || e?.cause,
+  });
+  throw e;
+}
 
     const raw = await externalResponse.text();
     let responseData: any = null;
@@ -157,10 +167,14 @@ export async function GET(req: NextRequest) {
     });
 
     return response;
-  } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "SuperApp login failed.";
-    console.error("[PORTAL_CONNECT] Error during SuperApp login:", message);
-    return createAuthErrorResponse(message, 502);
-  }
+ } catch (error: unknown) {
+  const message = error instanceof Error ? error.message : "SuperApp login failed.";
+  const cause = (error as any)?.cause;
+  console.error("[PORTAL_CONNECT] Error during SuperApp login:", message, {
+    code: cause?.code,
+    causeMessage: cause?.message,
+    host: (() => { try { return new URL(VALIDATE_TOKEN_URL!).host; } catch { return 'invalid URL'; } })(),
+  });
+  return createAuthErrorResponse(message, 502);
+}
 }
