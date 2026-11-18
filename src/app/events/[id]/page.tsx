@@ -78,77 +78,6 @@ function formatEventDate(startDate: Date, endDate: Date | null | undefined): str
 
 const DEFAULT_IMAGE_PLACEHOLDER = '/images/nibtickets.jpg';
 
-// Wallet options for YagoutPay's API Integration mode (doc section B, pg_details.wallet_type).
-// The customer picks one here instead of on Yagout's hosted page, since API mode never
-// leaves our site — Yagout pushes the authorization prompt straight to the chosen wallet.
-export const YAGOUT_WALLET_OPTIONS: { value: string; label: string }[] = [
-  { value: 'telebirr', label: 'Telebirr' },
-  { value: 'cbebirr', label: 'CBE Birr' },
-  { value: 'mpesa', label: 'M-Pesa' },
-  { value: 'kacha', label: 'Kacha' },
-  { value: 'cbemobile', label: 'CBE Mobile' },
-  { value: 'awashbirr', label: 'Awash Birr' },
-  { value: 'hijirabank', label: 'Hijira Bank' },
-  { value: 'ahadu', label: 'Ahadu' },
-  { value: 'NIB', label: 'NIB Bank' },
-  { value: 'yaya', label: 'YaYa Wallet' },
-];
-
-/**
- * Charges the order via YagoutPay's "API Integration" flow: a single server-to-server
- * JSON call that resolves synchronously (Successful/Failed) — no redirect, no
- * success_url/failure_url, and no separate callback route. The ticket is issued
- * server-side before this call returns.
- */
-async function payWithYagoutApi(transactionId: string, total: number, walletType: string, mobileNumber: string) {
-  const res = await api.post('/api/payment/yagout/charge', {
-    total,
-    transactionId,
-    walletType,
-    mobileNumber,
-  });
-  return res.data as { success: boolean; attendeeId?: number; error?: string };
-}
-
-/**
- * Charges the order via YagoutPay's "Aggregator Hosted (Non-Seamless)" flow: builds
- * the signed form fields and does a full-page navigation to Yagout's hosted checkout.
- * The customer picks their payment method there, and Yagout posts the result back
- * to /api/payment/yagoutPay-callback.
- */
-async function payWithYagoutHosted(transactionId: string, total: number) {
-  const res = await api.post('/api/payment/yagout/initiate', {
-    total,
-    transactionId,
-  });
-
-  if (!res.data.success) {
-    throw new Error(res.data.error || 'Failed to initiate YagoutPay payment.');
-  }
-
-  const { postUrl, meId, merchantRequest, hash } = res.data;
-
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = postUrl;
-  form.style.display = 'none';
-
-  const addField = (name: string, value: string) => {
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = name;
-    input.value = value;
-    form.appendChild(input);
-  };
-
-  addField('me_id', meId);
-  addField('merchant_request', merchantRequest);
-  addField('hash', hash);
-
-  document.body.appendChild(form);
-  form.submit(); // full-page navigation to Yagout's hosted checkout
-}
-
 export default function PublicEventDetailPage() {
   const router = useRouter();
   const params = useParams<{ id:string }>();
@@ -169,8 +98,6 @@ export default function PublicEventDetailPage() {
   const [attendeeName, setAttendeeName] = useState('');
   const [attendeePhone, setAttendeePhone] = useState('');
   const [isPhoneFromSession, setIsPhoneFromSession] = useState(false);
-  const [walletType, setWalletType] = useState<string>(YAGOUT_WALLET_OPTIONS[0].value);
- const [paymentMethod, setPaymentMethod] = useState<'direct' | 'hosted'>('hosted');
   const [existingClaimsCount, setExistingClaimsCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -391,15 +318,7 @@ export default function PublicEventDetailPage() {
 
         let isCancelled = false;
         let pollCount = 0;
-        // The YagoutPay API-Integration charge call can legitimately take up to
-        // ~110s (it blocks while the customer approves the wallet prompt on their
-        // phone) and resolves the request directly rather than relying on this
-        // poll. Keep the poll window comfortably longer than that so it doesn't
-        // report a false timeout while that request is still in flight — it's
-        // just a safety net (and still the primary mechanism for the NIB
-        // SuperApp webview flow).
-        const maxPolls = 65; // Poll for ~130 seconds
-
+        const maxPolls = 20; // Poll for 40 seconds
 
         const poll = async () => {
             if (isCancelled || pollCount >= maxPolls) {
@@ -905,8 +824,6 @@ export default function PublicEventDetailPage() {
                 />
               </div>
             </div>
-           
-           
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -923,9 +840,7 @@ export default function PublicEventDetailPage() {
       }
 
       setIsPurchaseModalOpen(false);
- if (typeof window !== 'undefined') {
-        localStorage.setItem('nibtera_guest_phone', attendeePhone);
-      }
+
       try {
         // Step 1: Create pending order
         const pendingOrderRes = await api.post('/api/payment/pending-order', {
@@ -955,26 +870,26 @@ export default function PublicEventDetailPage() {
 
         // Step 2: Initiate payment
         setPaymentStatus('processing');
+        const paymentRes = await api.post('/api/payment/nib/initiate', {
+          total,
+          transactionId,
+        });
 
-        if (typeof window !== 'undefined' && window.myJsChannel?.postMessage) {
-          // Inside the NIBtera SuperApp webview — keep using the existing Mini-App flow.
-          const paymentRes = await api.post('/api/payment/nib/initiate', {
-            total,
-            transactionId,
-          });
+        if (!paymentRes.data.success || !paymentRes.data.paymentToken) {
+          throw new Error(paymentRes.data.error || "Failed to initiate payment.");
+        }
 
-          if (!paymentRes.data.success || !paymentRes.data.paymentToken) {
-            throw new Error(paymentRes.data.error || "Failed to initiate payment.");
-          }
+        const paymentToken = paymentRes.data.paymentToken;
 
-          window.myJsChannel.postMessage({ type: 'PAYMENT', token: paymentRes.data.paymentToken });
-          toast({ title: "Processing Payment", description: "Handing off to NIBtera Super App..." });
-        } else if (paymentMethod === 'hosted') {
-          // Customer chose to pay on YagoutPay's hosted checkout page —
-          // full-page redirect; result arrives later via /yagoutPay-callback.
-          await payWithYagoutHosted(transactionId, total);
-          // form.submit() above navigates the page away; nothing else to do here.
-        } 
+        // Step 3: Post message to SuperApp
+        if (typeof window === 'undefined' || !window.myJsChannel?.postMessage) {
+          throw new Error('NIB SuperApp channel is not available.');
+        }
+
+        window.myJsChannel.postMessage({ type: 'PAYMENT', token: paymentToken });
+        toast({ title: "Processing Payment", description: "Handing off to NIBtera Super App..." });
+
+        
 
       } catch (err: any) {
         console.error("Payment initiation error:", err);

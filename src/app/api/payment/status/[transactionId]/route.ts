@@ -24,13 +24,7 @@ export async function GET(
   const user = await verifyAuth(request);
 
   try {
-    // 2. If we have a session, enforce strict ownership (unchanged from before).
-    //    If there's no session at all (a true guest arriving from a hosted
-    //    checkout redirect like YagoutPay), fall back to trusting the
-    //    transactionId itself — it's an unguessable UUID the client only has
-    //    because they just created/paid for this exact order, the same trust
-    //    model /api/payment/pending-order and /api/payment/yagout/initiate
-    //    already use.
+   
     let where: any;
 
     if (user) {

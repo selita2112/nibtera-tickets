@@ -26,7 +26,7 @@ model User {
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
   organizerId            String?
-  yagoutMerchantId       String?
+ 
   attendees              Attendee[]
   events                 Event[]    @relation("EventOrganizer")
   sessions               Session[]
@@ -115,14 +115,14 @@ model Event {
   nibBankAccount   String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
-  yagoutMerchantId String?
+  
   attendees        Attendee[]
   organizer        User            @relation("EventOrganizer", fields: [organizerId], references: [id])
   payments         EventPayment[]
   pendingOrders    PendingOrder[]
   promoCodes       PromoCode[]
   ticketTypes      TicketType[]
-  YagoutPayment    YagoutPayment[]
+  
 }
 
 model TicketType {
@@ -180,7 +180,7 @@ model PendingOrder {
   payments         EventPayment[]
   attendee         Attendee?       @relation(fields: [attendeeId], references: [id])
   event            Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  YagoutPayment    YagoutPayment[]
+  
 }
 
 model EventPayment {
@@ -198,7 +198,7 @@ model EventPayment {
   updatedAt      DateTime       @updatedAt
   event          Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
   pendingOrder   PendingOrder   @relation(fields: [pendingOrderId], references: [id], onDelete: Cascade)
-  YagoutPayment  YagoutPayment?
+ 
 }
 
 model FailedIpAttempt {
@@ -222,35 +222,6 @@ model HomeCarouselAd {
   updatedAt DateTime @updatedAt
 }
 
-model YagoutPayment {
-  id             String       @id
-  eventId        Int
-  pendingOrderId Int
-  eventPaymentId String       @unique
-  orderNo        String       @unique
-  meId           String
-  amount         Decimal      @db.Decimal(12, 2)
-  currency       String       @default("ETB")
-  status         String       @default("PENDING")
-  agRef          String?      @unique
-  pgRef          String?      @unique
-  resCode        String?
-  resMessage     String?
-  callbackToken  String?
-  paymentDate    DateTime?
-  rawResponse    Json?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime
-  Event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  EventPayment   EventPayment @relation(fields: [eventPaymentId], references: [id], onDelete: Cascade)
-  PendingOrder   PendingOrder @relation(fields: [pendingOrderId], references: [id], onDelete: Cascade)
-
-  @@index([eventId])
-  @@index([eventPaymentId])
-  @@index([orderNo])
-  @@index([pendingOrderId])
-  @@index([status])
-}
 model AuditLog {
   id         String   @id @default(cuid())
   userId     String?
